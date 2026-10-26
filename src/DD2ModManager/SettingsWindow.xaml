@@ -1,0 +1,85 @@
+<Window x:Class="DD2ModManager.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:DD2ModManager.ViewModels"
+        xmlns:local="clr-namespace:DD2ModManager"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
+        Title="Settings" Width="640" SizeToContent="Height" ResizeMode="NoResize"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <local:VisibleWhenConverter x:Key="VisibleWhen" />
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,14,0,6" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,5,0,0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="24,10,24,20" Background="{StaticResource BgBrush}">
+        <TextBlock Text="FOLDERS" Style="{StaticResource SectionLabel}" />
+
+        <TextBlock Text="Dragon's Dogma 2 folder" Style="{StaticResource Label}" Margin="0,0,0,6" />
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseGameCommand}" />
+            <TextBox Text="{Binding GamePath, UpdateSourceTrigger=PropertyChanged}" />
+        </DockPanel>
+        <TextBlock Text="{Binding GameStatus}" Style="{StaticResource Hint}" />
+
+        <TextBlock Text="Mod library" Style="{StaticResource Label}" />
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseLibraryCommand}" />
+            <TextBox Text="{Binding LibraryPath, UpdateSourceTrigger=PropertyChanged}" />
+        </DockPanel>
+        <TextBlock Text="Where mod archives live. Fluffy's Games\DragonsDogma2\Mods folder works as-is." Style="{StaticResource Hint}" />
+
+        <TextBlock Text="Fluffy Mod Manager folder" Style="{StaticResource Label}" />
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Import installed mods" Margin="8,0,0,0" Command="{Binding ImportFluffyCommand}"
+                    IsEnabled="{Binding CanImportFluffy}" ToolTip="Adopt the mods Fluffy installed so they can be updated and uninstalled here" />
+            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseFluffyCommand}" />
+            <TextBox Text="{Binding FluffyPath, UpdateSourceTrigger=PropertyChanged}" />
+        </DockPanel>
+
+        <TextBlock Text="NEXUS MODS" Style="{StaticResource SectionLabel}" Margin="0,24,0,6" />
+        <TextBlock Text="Personal API key" Style="{StaticResource Label}" Margin="0,0,0,6" />
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Remove" Margin="8,0,0,0" Command="{Binding ClearKeyCommand}" />
+            <Button DockPanel.Dock="Right" Content="Test" Margin="8,0,0,0" Command="{Binding TestKeyCommand}" />
+            <PasswordBox x:Name="KeyBox" PasswordChanged="OnKeyChanged" />
+        </DockPanel>
+        <TextBlock Style="{StaticResource Hint}">
+            <Run Text="{Binding KeyStatus, Mode=OneWay}" />
+            <LineBreak />
+            <Hyperlink Command="{Binding OpenKeyPageCommand}" Foreground="{StaticResource AccentBrush}">Get your key from Nexus (Site preferences → API Keys)</Hyperlink>
+            <Run Text=". It's stored encrypted for your Windows account." />
+        </TextBlock>
+
+        <TextBlock Text="&quot;Mod Manager Download&quot; links" Style="{StaticResource Label}" />
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Restore previous" Margin="8,0,0,0" Command="{Binding RestoreNxmCommand}"
+                    Visibility="{Binding CanRestoreNxm, Converter={StaticResource VisibleWhen}}" />
+            <Button DockPanel.Dock="Right" Content="Use this app" Margin="8,0,0,0" Command="{Binding RegisterNxmCommand}"
+                    Visibility="{Binding NxmIsOurs, Converter={StaticResource VisibleWhen}, ConverterParameter=not}" />
+            <TextBlock Text="{Binding NxmStatus}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </DockPanel>
+
+        <TextBlock Text="UPDATES" Style="{StaticResource SectionLabel}" Margin="0,24,0,6" />
+        <CheckBox Content="Check for updates when the app starts" IsChecked="{Binding CheckOnStartup}" Margin="0,4" />
+        <CheckBox Content="Install updates automatically (only when Nexus clearly links the new file)" IsChecked="{Binding AutoInstall}" Margin="0,4" />
+        <CheckBox Content="Send replaced archives to the Recycle Bin after updating" IsChecked="{Binding Recycle}" Margin="0,4" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+            <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" MinWidth="90" />
+            <Button Content="Save" Style="{StaticResource AccentButton}" IsDefault="True" MinWidth="90" Command="{Binding SaveCommand}" />
+        </StackPanel>
+    </StackPanel>
+</Window>

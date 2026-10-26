@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7889C29C-B0AA-4E76-81EB-44B63CBB15CD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DD2ModManager.Core", "src\DD2ModManager.Core\DD2ModManager.Core.csproj", "{28189E7B-BA70-43D0-B392-123B5B8D9736}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DD2ModManager", "src\DD2ModManager\DD2ModManager.csproj", "{510F995F-9957-4A57-A449-B0FEDCC2A8E1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{509877BE-4FD3-4DA2-8B6A-A5A942EC935D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DD2ModManager.Tests", "tests\DD2ModManager.Tests\DD2ModManager.Tests.csproj", "{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{CFFB5398-0648-41D0-B923-4B93A14D6EA7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DD2ModManager.Cli", "tools\DD2ModManager.Cli\DD2ModManager.Cli.csproj", "{9DD437C7-93FE-4E59-9C94-2817AAD7C290}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{28189E7B-BA70-43D0-B392-123B5B8D9736}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{28189E7B-BA70-43D0-B392-123B5B8D9736}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{28189E7B-BA70-43D0-B392-123B5B8D9736}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{28189E7B-BA70-43D0-B392-123B5B8D9736}.Release|Any CPU.Build.0 = Release|Any CPU
+		{510F995F-9957-4A57-A449-B0FEDCC2A8E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{510F995F-9957-4A57-A449-B0FEDCC2A8E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{510F995F-9957-4A57-A449-B0FEDCC2A8E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{510F995F-9957-4A57-A449-B0FEDCC2A8E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9DD437C7-93FE-4E59-9C94-2817AAD7C290}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9DD437C7-93FE-4E59-9C94-2817AAD7C290}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9DD437C7-93FE-4E59-9C94-2817AAD7C290}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9DD437C7-93FE-4E59-9C94-2817AAD7C290}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{28189E7B-BA70-43D0-B392-123B5B8D9736} = {7889C29C-B0AA-4E76-81EB-44B63CBB15CD}
+		{510F995F-9957-4A57-A449-B0FEDCC2A8E1} = {7889C29C-B0AA-4E76-81EB-44B63CBB15CD}
+		{D59B43F0-0D6D-4A91-9B16-9AAEAD15E6C3} = {509877BE-4FD3-4DA2-8B6A-A5A942EC935D}
+		{9DD437C7-93FE-4E59-9C94-2817AAD7C290} = {CFFB5398-0648-41D0-B923-4B93A14D6EA7}
+	EndGlobalSection
+EndGlobal
