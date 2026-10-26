@@ -111,17 +111,34 @@ public sealed class ArchiveModSource(string path) : IModSource
         try
         {
             using var archive = ArchiveFactory.OpenArchive(FullPath, new ReaderOptions());
-            // Sequential extraction is required for solid 7z/rar archives to stay fast.
-            using var reader = archive.ExtractAllEntries();
-            while (reader.MoveToNextEntry())
+            Stream Create(string? key)
             {
-                if (reader.Entry.IsDirectory) continue;
-                var rel = PathUtil.NormalizeRelative(reader.Entry.Key ?? "");
-                if (rel == null) continue;
+                var rel = PathUtil.NormalizeRelative(key ?? "");
+                if (rel == null) return Stream.Null;
                 var target = PathUtil.Combine(directory, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                using var output = File.Create(target);
-                reader.WriteEntryTo(output);
+                return File.Create(target);
+            }
+
+            if (archive.IsSolid || archive.Type == SharpCompress.Common.ArchiveType.SevenZip)
+            {
+                // Solid archives must be read front to back; random access would re-decompress for every entry.
+                using var reader = archive.ExtractAllEntries();
+                while (reader.MoveToNextEntry())
+                {
+                    if (reader.Entry.IsDirectory) continue;
+                    using var output = Create(reader.Entry.Key);
+                    reader.WriteEntryTo(output);
+                }
+            }
+            else
+            {
+                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
+                {
+                    using var output = Create(entry.Key);
+                    using var input = entry.OpenEntryStream();
+                    input.CopyTo(output);
+                }
             }
         }
         catch (Exception ex) when (SevenZip.IsAvailable)
@@ -134,8 +151,11 @@ public sealed class ArchiveModSource(string path) : IModSource
     }
 }
 
-internal static class SevenZip
+public static class SevenZip
 {
+    /// <summary>Tests turn this off to prove SharpCompress handles an archive by itself.</summary>
+    public static bool Enabled { get; set; } = true;
+
     private static readonly Lazy<string?> Exe = new(() =>
         new[]
         {
@@ -146,7 +166,7 @@ internal static class SevenZip
         .Select(p => Path.Combine(p, "7-Zip", "7z.exe"))
         .FirstOrDefault(File.Exists));
 
-    public static bool IsAvailable => Exe.Value != null;
+    public static bool IsAvailable => Enabled && Exe.Value != null;
 
     public static IReadOnlyList<SourceEntry> List(string archive)
     {

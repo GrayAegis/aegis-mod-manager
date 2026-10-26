@@ -104,6 +104,44 @@ public class ModManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatingAModThatBundlesAnotherModsFontWorks()
+    {
+        // Reproduces the Fluffy import: both mods ship the font, but Fluffy recorded it only under Take Notice.
+        Fixtures.Zip(Path.Combine(_library, "Take Notice 1696 1.3.2 2026-10-15T12-53Z PjbdQjpJo.zip"),
+            ("reframework/fonts/Alegreya.ttf", "font"), ("reframework/autorun/Notices.lua", "notices"));
+        Fixtures.Zip(Path.Combine(_library, "Immersive Interactables 1518 1.7.6 2026-10-17T17-50Z ihV1KhUrZ.zip"),
+            ("reframework/fonts/Alegreya.ttf", "font"), ("reframework/autorun/Interactables.lua", "old"));
+        Directory.CreateDirectory(Path.Combine(_game, "reframework", "fonts"));
+        Directory.CreateDirectory(Path.Combine(_game, "reframework", "autorun"));
+        File.WriteAllText(Path.Combine(_game, "reframework", "fonts", "Alegreya.ttf"), "font");
+        File.WriteAllText(Path.Combine(_game, "reframework", "autorun", "Notices.lua"), "notices");
+        File.WriteAllText(Path.Combine(_game, "reframework", "autorun", "Interactables.lua"), "old");
+        JsonStore.Save(AppPaths.State, new AppState
+        {
+            FluffyImported = true,
+            Installed =
+            [
+                new() { UnitId = "Take Notice 1696 1.3.2 2026-10-15T12-53Z PjbdQjpJo", PackageFileName = "Take Notice 1696 1.3.2 2026-10-15T12-53Z PjbdQjpJo.zip",
+                        DisplayName = "Take Notice", Files = [new() { Path = "reframework/fonts/Alegreya.ttf" }, new() { Path = "reframework/autorun/Notices.lua" }] },
+                new() { UnitId = "Immersive Interactables 1518 1.7.6 2026-10-17T17-50Z ihV1KhUrZ", PackageFileName = "Immersive Interactables 1518 1.7.6 2026-10-17T17-50Z ihV1KhUrZ.zip",
+                        DisplayName = "Immersive Interactables", Files = [new() { Path = "reframework/autorun/Interactables.lua" }] },
+            ],
+        });
+        var manager = NewManager();
+        Assert.Contains(manager.State.Installed[1].Files, f => f.Path == "reframework/fonts/Alegreya.ttf");
+
+        Fixtures.Zip(Path.Combine(_library, "Immersive Interactables 1518 1.8.1 2026-10-25T14-43Z KHSz1HWgj.zip"),
+            ("reframework/fonts/Alegreya.ttf", "font v2"), ("reframework/autorun/Interactables.lua", "new"));
+        manager.Refresh();
+        await manager.UpdateAsync(manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Immersive Interactables"));
+
+        Assert.Equal("new", File.ReadAllText(Path.Combine(_game, "reframework", "autorun", "Interactables.lua")));
+        var notices = manager.State.Installed.Single(m => m.DisplayName == "Take Notice");
+        manager.Uninstall([notices]);
+        Assert.Equal("font v2", File.ReadAllText(Path.Combine(_game, "reframework", "fonts", "Alegreya.ttf")));
+    }
+
+    [Fact]
     public void ShowsUninstallRowWhenArchiveIsMissing()
     {
         var manager = NewManager();

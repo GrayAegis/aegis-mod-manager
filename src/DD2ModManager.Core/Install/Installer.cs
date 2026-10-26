@@ -70,14 +70,54 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
         return result;
     }
 
+    /// <summary>
+    /// Files other installed mods already own with different content. Identical copies (shared fonts and script
+    /// libraries several mods bundle) aren't conflicts. Uses archive sizes/CRCs, so it works before extraction.
+    /// </summary>
     public IReadOnlyList<InstallConflict> FindConflicts(ModUnit unit, IReadOnlyList<int>? pakSlots = null) =>
         PlanTargets(unit, pakSlots)
-            .Select(t => (t.Target, Owner: state.FindOwner(t.Target)))
-            .Where(t => t.Owner != null)
+            .Select(t => (t.Mapping, t.Target, Owner: state.OwnersOf(t.Target).FirstOrDefault()))
+            .Where(t => t.Owner != null && !MatchesDisk(t.Mapping, t.Target))
             .Select(t => new InstallConflict(t.Target, t.Owner!.UnitId, t.Owner.DisplayName))
             .ToList();
 
-    /// <summary>Installs one unit from an already-extracted package. All-or-nothing: on failure every change is undone.</summary>
+    private bool MatchesDisk(FileMapping mapping, string target)
+    {
+        var path = PathUtil.Combine(_gameDir, target);
+        if (!File.Exists(path)) return false;
+        var info = new FileInfo(path);
+        if (info.Length != mapping.Size) return false;
+        if (mapping.Crc is not { } crc) return true;
+        using var stream = File.OpenRead(path);
+        var hash = new System.IO.Hashing.Crc32();
+        hash.Append(stream);
+        return hash.GetCurrentHashAsUInt32() == crc;
+    }
+
+    private static bool SameContent(string a, string b)
+    {
+        var infoA = new FileInfo(a);
+        var infoB = new FileInfo(b);
+        if (!infoA.Exists || !infoB.Exists || infoA.Length != infoB.Length) return false;
+        using var streamA = infoA.OpenRead();
+        using var streamB = infoB.OpenRead();
+        var bufferA = new byte[65536];
+        var bufferB = new byte[65536];
+        int read;
+        while ((read = streamA.ReadAtLeast(bufferA, bufferA.Length, throwOnEndOfStream: false)) > 0)
+        {
+            streamB.ReadExactly(bufferB, 0, read);
+            if (!bufferA.AsSpan(0, read).SequenceEqual(bufferB.AsSpan(0, read))) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Installs one unit from an already-extracted package. All-or-nothing: on failure every change is undone.
+    /// Files other mods also ship are shared: identical copies are just recorded, and with
+    /// <paramref name="overwriteConflicts"/> differing ones are replaced. Either way every mod keeps listing the
+    /// file, so it stays on disk until the last of them is uninstalled.
+    /// </summary>
     public InstalledMod Install(ModPackage package, ModUnit unit, string extractedDir, bool overwriteConflicts = false,
         IReadOnlyList<int>? pakSlots = null)
     {
@@ -86,7 +126,12 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
             throw new InvalidOperationException($"{unit.DisplayName} is already installed");
 
         var plan = PlanTargets(unit, pakSlots);
-        var conflicts = FindConflicts(unit, pakSlots);
+        var conflicts = plan
+            .Select(p => (p.Target, Owner: state.OwnersOf(p.Target).FirstOrDefault(),
+                Same: SameContent(PathUtil.Combine(extractedDir, p.Mapping.Source), PathUtil.Combine(_gameDir, p.Target))))
+            .Where(c => c.Owner != null && !c.Same)
+            .Select(c => new InstallConflict(c.Target, c.Owner!.UnitId, c.Owner.DisplayName))
+            .ToList();
         if (conflicts.Count > 0 && !overwriteConflicts) throw new InstallConflictException(conflicts);
 
         var mod = new InstalledMod
@@ -107,20 +152,22 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
                 var destination = PathUtil.Combine(_gameDir, target);
                 var hasBackup = false;
 
-                var owner = state.FindOwner(target);
-                if (owner != null)
+                var owners = state.OwnersOf(target).ToList();
+                if (owners.Count > 0)
                 {
-                    var taken = owner.Files.First(f => PathUtil.Comparer.Equals(f.Path, target));
-                    owner.Files.Remove(taken);
-                    hasBackup = taken.HasBackup;
-                    undo.Push(() => owner.Files.Add(taken));
-                    Log.Warn($"{mod.DisplayName} overwrites {target} from {owner.DisplayName}");
+                    // Shared with other mods: never take the file away from them, and the original-file backup stays theirs.
+                    if (SameContent(source, destination))
+                    {
+                        mod.Files.Add(new InstalledFile { Path = target });
+                        continue;
+                    }
+                    Log.Warn($"{mod.DisplayName} replaces {target}, which {string.Join(", ", owners.Select(o => o.DisplayName))} also use");
                 }
 
                 if (File.Exists(destination))
                 {
                     var backup = PathUtil.Combine(_backupDir, target);
-                    if (owner == null && !File.Exists(backup))
+                    if (owners.Count == 0 && !File.Exists(backup))
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
                         File.Move(destination, backup);
@@ -134,7 +181,7 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
                         Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
                         File.Move(destination, saved);
                         undo.Push(() => File.Move(saved, destination, overwrite: true));
-                        hasBackup |= owner == null;
+                        hasBackup |= owners.Count == 0;
                     }
                 }
 
@@ -164,7 +211,10 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
         }
     }
 
-    /// <summary>Removes a mod's files and restores any originals. State is saved even if a file can't be removed.</summary>
+    /// <summary>
+    /// Removes a mod's files and restores any originals. Files other installed mods also list stay on disk.
+    /// State is saved even if a file can't be removed.
+    /// </summary>
     public void Uninstall(InstalledMod mod)
     {
         var keep = ProtectedDirs;
@@ -172,6 +222,15 @@ public sealed partial class Installer(string gameDir, string backupDir, AppState
         {
             foreach (var file in mod.Files.ToList())
             {
+                var stillUsed = state.OwnersOf(file.Path).Where(o => o != mod).ToList();
+                if (stillUsed.Count > 0)
+                {
+                    if (file.HasBackup)
+                        stillUsed[0].Files.First(f => PathUtil.Comparer.Equals(f.Path, file.Path)).HasBackup = true;
+                    mod.Files.Remove(file);
+                    continue;
+                }
+
                 var destination = PathUtil.Combine(_gameDir, file.Path);
                 if (File.Exists(destination)) File.Delete(destination);
                 if (file.HasBackup)

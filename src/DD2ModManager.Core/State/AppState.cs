@@ -47,8 +47,9 @@ public sealed class AppState
     public bool FluffyImported { get; set; }
     public DateTime? LastUpdateCheckUtc { get; set; }
 
-    public InstalledMod? FindOwner(string relativePath) =>
-        Installed.FirstOrDefault(m => m.Files.Any(f => PathUtil.Comparer.Equals(f.Path, relativePath)));
+    /// <summary>Installed mods that list this game file. Several mods can share one (bundled fonts, script libraries).</summary>
+    public IEnumerable<InstalledMod> OwnersOf(string relativePath) =>
+        Installed.Where(m => m.Files.Any(f => PathUtil.Comparer.Equals(f.Path, relativePath)));
 
     public IEnumerable<InstalledMod> InstalledFrom(string packageFileName) =>
         Installed.Where(m => PathUtil.Comparer.Equals(m.PackageFileName, packageFileName));

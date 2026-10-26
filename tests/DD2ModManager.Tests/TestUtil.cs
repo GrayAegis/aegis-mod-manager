@@ -1,7 +1,15 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using DD2ModManager.Core.Archives;
 
 namespace DD2ModManager.Tests;
+
+internal static class TestSetup
+{
+    // Every test archive must work with SharpCompress alone; 7-Zip is only a fallback on machines that have it.
+    [ModuleInitializer]
+    internal static void DisableSevenZip() => SevenZip.Enabled = false;
+}
 
 internal sealed class TempDir : IDisposable
 {

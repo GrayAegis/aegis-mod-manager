@@ -1,3 +1,4 @@
+using DD2ModManager.Core.Archives;
 using DD2ModManager.Core.Install;
 using DD2ModManager.Core.Library;
 using DD2ModManager.Core.State;
@@ -108,8 +109,55 @@ public class InstallerTests : IDisposable
 
         var second = installer.Install(b, b.Units[0], xb, overwriteConflicts: true);
         Assert.Equal("second", File.ReadAllText(GameFile("reframework/autorun/shared.lua")));
-        Assert.Empty(first.Files);
+        // Overwriting shares the file rather than taking it, so neither uninstall strands the other mod.
+        Assert.Single(first.Files);
         Assert.Single(second.Files);
+        installer.Uninstall(second);
+        Assert.True(File.Exists(GameFile("reframework/autorun/shared.lua")));
+    }
+
+    [Fact]
+    public void IdenticalFilesBundledByTwoModsAreSharedNotConflicts()
+    {
+        var installer = NewInstaller();
+        var (a, xa) = Package("Notices", ("reframework/fonts/Alegreya.ttf", "font"), ("reframework/autorun/Notices.lua", "n"));
+        var (b, xb) = Package("Interactables", ("reframework/fonts/Alegreya.ttf", "font"), ("reframework/autorun/II.lua", "i"));
+        var notices = installer.Install(a, a.Units[0], xa);
+
+        Assert.Empty(installer.FindConflicts(b.Units[0]));
+        var interactables = installer.Install(b, b.Units[0], xb);
+        Assert.Contains(interactables.Files, f => f.Path == "reframework/fonts/Alegreya.ttf");
+
+        installer.Uninstall(notices);
+        Assert.True(File.Exists(GameFile("reframework/fonts/Alegreya.ttf")));
+        installer.Uninstall(interactables);
+        Assert.False(File.Exists(GameFile("reframework/fonts/Alegreya.ttf")));
+    }
+
+    [Fact]
+    public void OriginalFileBackupFollowsTheLastSharingMod()
+    {
+        File.WriteAllText(GameFile("shared.dll"), "original");
+        var installer = NewInstaller();
+        var (a, xa) = Package("A", ("shared.dll", "modded"));
+        var (b, xb) = Package("B", ("shared.dll", "modded"));
+        var modA = installer.Install(a, a.Units[0], xa);
+        var modB = installer.Install(b, b.Units[0], xb);
+
+        installer.Uninstall(modA);
+        Assert.Equal("modded", File.ReadAllText(GameFile("shared.dll")));
+        Assert.True(modB.Files.Single().HasBackup);
+
+        installer.Uninstall(modB);
+        Assert.Equal("original", File.ReadAllText(GameFile("shared.dll")));
+    }
+
+    [Fact]
+    public void ExtractsPlainZipsWithoutSevenZip()
+    {
+        Assert.False(SevenZip.IsAvailable);
+        var (_, x) = Package("Plain", ("a/b.lua", "b"), ("c.txt", "c"));
+        Assert.Equal("b", File.ReadAllText(Path.Combine(x, "a", "b.lua")));
     }
 
     [Fact]

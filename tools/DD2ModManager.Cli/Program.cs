@@ -43,6 +43,55 @@ switch (args[0])
 
     case "verify-fluffy":
         return VerifyFluffy(args[1], args.Length > 2 ? args[2] : null);
+
+    case "extract-check":
+    {
+        // Extracts every archive with SharpCompress only (no 7-Zip fallback) into a temp folder.
+        DD2ModManager.Core.Archives.SevenZip.Enabled = false;
+        var failures = 0;
+        foreach (var p in ModLibrary.Scan(args[1]).Where(p => !p.IsFolder))
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "dd2mm-extract-check", Guid.NewGuid().ToString("N"));
+            try
+            {
+                var source = p.OpenSource();
+                source.ExtractAll(temp);
+                var expected = source.ListFiles().Count;
+                var actual = Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories).Count();
+                var ok = expected == actual;
+                if (!ok) failures++;
+                Console.WriteLine($"[{(ok ? "OK" : "COUNT")}] {p.FileName} ({actual}/{expected} files)");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"[FAIL] {p.FileName}: {ex.Message}");
+            }
+            finally
+            {
+                if (Directory.Exists(temp)) Directory.Delete(temp, recursive: true);
+            }
+        }
+        Console.WriteLine($"{failures} failures");
+        return failures == 0 ? 0 : 2;
+    }
+
+    case "reconcile-preview":
+    {
+        // Runs the shared-file repair on a copy of the app's data folder and reports what it would add.
+        var real = DD2ModManager.Core.State.AppPaths.DataDir;
+        var copy = Path.Combine(Path.GetTempPath(), "dd2mm-reconcile-preview", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(copy);
+        foreach (var f in new[] { "settings.json", "state.json", "nexus-cache.json" })
+            if (File.Exists(Path.Combine(real, f))) File.Copy(Path.Combine(real, f), Path.Combine(copy, f));
+        DD2ModManager.Core.State.AppPaths.DataDir = copy;
+        DD2ModManager.Core.Log.Written += (_, m) => { if (m.Contains(" also uses ")) Console.WriteLine(m); };
+        var manager = new ModManager();
+        manager.Load();
+        manager.Refresh();
+        Directory.Delete(copy, recursive: true);
+        return 0;
+    }
 }
 return 1;
 

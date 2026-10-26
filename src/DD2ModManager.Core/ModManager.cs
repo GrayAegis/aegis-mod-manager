@@ -86,7 +86,37 @@ public sealed class ModManager
         Library = ModLibrary.Scan(LibraryPath);
         foreach (var stale in State.Nexus.Keys.Where(k => Library.All(p => !PathUtil.Comparer.Equals(p.FileName, k))).ToList())
             State.Nexus.Remove(stale);
+        if (ReconcileSharedFiles()) SaveState();
         Log.Info($"Library: {Library.Count} packages in {LibraryPath}");
+    }
+
+    /// <summary>
+    /// Makes every installed mod list the shared files it ships. Fluffy records a file bundled by several mods
+    /// under only one of them, which would let uninstalling that one delete a file the others still need.
+    /// </summary>
+    private bool ReconcileSharedFiles()
+    {
+        var owned = State.Installed
+            .SelectMany(m => m.Files.Select(f => (f.Path, Mod: m)))
+            .ToLookup(x => x.Path, x => x.Mod, PathUtil.Comparer);
+        var packages = Library.ToDictionary(p => p.FileName, PathUtil.Comparer);
+        var changed = false;
+        foreach (var mod in State.Installed)
+        {
+            if (mod.PackageFileName == null || !packages.TryGetValue(mod.PackageFileName, out var package)) continue;
+            var unit = package.Units.FirstOrDefault(u => PathUtil.Comparer.Equals(u.Id, mod.UnitId));
+            if (unit == null) continue;
+            var listed = mod.Files.Select(f => f.Path).ToHashSet(PathUtil.Comparer);
+            foreach (var target in unit.Files.Where(f => !f.IsPak).Select(f => f.Target))
+            {
+                if (listed.Contains(target) || !owned[target].Any(o => o != mod)) continue;
+                mod.Files.Add(new InstalledFile { Path = target });
+                listed.Add(target);
+                changed = true;
+                Log.Info($"{mod.DisplayName} also uses {target} (shared with {string.Join(", ", owned[target].Select(o => o.DisplayName))})");
+            }
+        }
+        return changed;
     }
 
     private Installer CreateInstaller()
@@ -108,13 +138,14 @@ public sealed class ModManager
         var install = FluffyImport.ReadInstalled(FluffyImport.InstalledIni(root));
         var gameDir = Settings.GamePath ?? install.GamePath ?? throw new InvalidOperationException("Game folder not set");
         var matches = FluffyImport.Match(install, Library, gameDir);
-        var known = State.Installed.SelectMany(m => m.Files).Select(f => f.Path).ToHashSet(PathUtil.Comparer);
         foreach (var mod in FluffyImport.ToInstalledMods(matches))
         {
-            mod.Files.RemoveAll(f => known.Contains(f.Path));
-            if (mod.Files.Count > 0) State.Installed.Add(mod);
+            var alreadyTracked = State.Installed.Any(m => PathUtil.Comparer.Equals(m.UnitId, mod.UnitId) &&
+                                                          PathUtil.Comparer.Equals(m.PackageFileName, mod.PackageFileName));
+            if (!alreadyTracked && mod.Files.Count > 0) State.Installed.Add(mod);
         }
         State.FluffyImported = true;
+        ReconcileSharedFiles();
         SaveState();
         Log.Info($"Imported {matches.Count} installed mods from Fluffy ({matches.Count(m => m.Package == null)} without a matching archive)");
         return matches;
@@ -307,7 +338,8 @@ public sealed class ModManager
             installer.Uninstall(oldMod);
             try
             {
-                installer.Install(to, newUnit, extracted.Path, overwriteConflicts: false, slots);
+                // The new version may bundle a newer copy of a file other mods share; it replaces it but they keep using it.
+                installer.Install(to, newUnit, extracted.Path, overwriteConflicts: true, slots);
             }
             catch (Exception ex)
             {
