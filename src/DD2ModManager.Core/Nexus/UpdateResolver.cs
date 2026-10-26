@@ -105,7 +105,7 @@ public static class UpdateResolver
     private static bool VersionEquals(string? a, string? b) =>
         a != null && b != null && string.Equals(a.Trim().TrimStart('v', 'V'), b.Trim().TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase);
 
-    private static string NameKey(NexusFile f) => ArchiveNameParser.Normalize(f.Name ?? f.FileName ?? "");
+    public static string NameKey(NexusFile f) => ArchiveNameParser.Normalize(f.Name ?? f.FileName ?? "");
 
     private static string Category(NexusFile f) => (f.CategoryName ?? (f.CategoryId == 1 ? "MAIN" : f.CategoryId.ToString())).ToUpperInvariant();
 }

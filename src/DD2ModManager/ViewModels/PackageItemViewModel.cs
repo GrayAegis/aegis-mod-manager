@@ -20,6 +20,51 @@ public sealed class UnitItemViewModel(PackageItemViewModel owner, ModUnit unit, 
     public string Detail => $"{Unit.Files.Count} file{(Unit.Files.Count == 1 ? "" : "s")}" + (Unit.HasPaks ? " · pak" : "");
 }
 
+public sealed class ChangelogItemViewModel(ChangelogEntry entry)
+{
+    public string VersionText => entry.Version is { Length: > 0 } v ? "v" + v.TrimStart('v', 'V') : "Update";
+    public string DateText => entry.Uploaded.LocalDateTime.ToString("d MMM yyyy");
+    public string Text => entry.Text;
+}
+
+public sealed class RequirementItemViewModel(RequirementInfo info)
+{
+    public RequirementInfo Info { get; } = info;
+    public string Name => Info.Name;
+    public string? Url => Info.Url;
+    public bool HasUrl => Info.Url != null;
+    public bool IsMissingRequired => Info is { Required: true, Status: RequirementStatus.Missing };
+
+    /// <summary>"ok", "missing", "optional" or "unknown"; drives the dot and label colour.</summary>
+    public string Kind => Info.Status switch
+    {
+        RequirementStatus.Installed => "ok",
+        RequirementStatus.Missing when Info.Required => "missing",
+        RequirementStatus.Missing => "optional",
+        _ => "unknown",
+    };
+
+    public string StatusText => Info.Status switch
+    {
+        _ when Info.IsModManager => "This app",
+        RequirementStatus.Installed => Name.Contains("REFramework", StringComparison.OrdinalIgnoreCase) ? "Found" : "Installed",
+        RequirementStatus.Missing when Info.Required => "Missing",
+        RequirementStatus.Missing => "Not installed",
+        _ => "External",
+    };
+
+    public string Detail
+    {
+        get
+        {
+            var note = Info.Notes?.Trim() ?? "";
+            if (note.Length > 160) note = note[..157].TrimEnd() + "…";
+            if (Info.Required) return note;
+            return note.Length == 0 ? "Recommended" : "Recommended · " + note;
+        }
+    }
+}
+
 public sealed partial class PackageItemViewModel : ObservableObject
 {
     private readonly ModManager _manager;
@@ -36,7 +81,30 @@ public sealed partial class PackageItemViewModel : ObservableObject
                   ?? view.Package?.ParsedName.UploadedAt?.LocalDateTime
                   ?? view.Package?.LastWriteUtc.ToLocalTime();
         NexusFile = nexusFile;
+
+        Changelog = manager.ChangelogFor(view);
+        ChangelogEntries = Changelog?.Entries.Select(e => new ChangelogItemViewModel(e)).ToList() ?? [];
+        Requirements = manager.RequirementsOf(view)
+            .OrderBy(r => r.Status == RequirementStatus.Missing && r.Required ? 0 : r.Required ? 1 : 2)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(r => new RequirementItemViewModel(r))
+            .ToList();
+        RequiredBy = manager.RequiredBy(view);
     }
+
+    public ChangelogView? Changelog { get; }
+    public IReadOnlyList<ChangelogItemViewModel> ChangelogEntries { get; }
+    public string ChangelogTitle => Changelog?.Title ?? "";
+    /// <summary>"What's new" goes right under the Update button; a no-update changelog sits lower down.</summary>
+    public bool ShowChangelogFirst => Changelog?.IsUpdate == true;
+    public bool ShowChangelogLater => Changelog is { IsUpdate: false };
+
+    public IReadOnlyList<RequirementItemViewModel> Requirements { get; }
+    public IReadOnlyList<string> RequiredBy { get; }
+    public string RequiredByText => string.Join(", ", RequiredBy);
+
+    public bool HasMissingRequired => AnyInstalled && Requirements.Any(r => r.IsMissingRequired);
+    public string MissingRequiredTip => "Missing requirements: " + string.Join(", ", Requirements.Where(r => r.IsMissingRequired).Select(r => r.Name));
 
     public PackageView View { get; }
     public ModPackage? Package => View.Package;

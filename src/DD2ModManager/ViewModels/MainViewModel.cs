@@ -123,6 +123,9 @@ public sealed partial class MainViewModel : ObservableObject
             OpenSettings();
         }
 
+        // Public data, no API key needed; only refetched once a day or for mods it hasn't seen.
+        await RunAsync("Checking mod requirements…", _ => Manager.TryRefreshRequirementsAsync());
+
         if (!Dialogs.Interactive) return;
         await RefreshAccountAsync();
         if (nxmLink != null) await HandleExternalMessageAsync(nxmLink);
@@ -224,11 +227,12 @@ public sealed partial class MainViewModel : ObservableObject
             return;
 
         var failures = new List<string>();
+        var updated = new List<ModPackage>();
         await RunAsync("Updating mods…", async progress =>
         {
             foreach (var view in targets)
             {
-                try { await Manager.UpdateAsync(view, progress); }
+                try { updated.Add(await Manager.UpdateAsync(view, progress)); }
                 catch (Exception ex) when (ex is not NexusRateLimitException)
                 {
                     Log.Error($"Updating {view.Name} failed: {ex.Message}");
@@ -238,6 +242,55 @@ public sealed partial class MainViewModel : ObservableObject
         });
         StatusText = failures.Count == 0 ? $"Updated {targets.Count} mods." : $"Updated {targets.Count - failures.Count} of {targets.Count} mods.";
         if (failures.Count > 0) Dialogs.Warn("Some updates failed", string.Join("\n\n", failures));
+        // A new version can add requirements ("Required since v1.5.1").
+        await WarnMissingRequirementsAsync(updated.Select(p => (p, p.Units)).ToList());
+    }
+
+    /// <summary>
+    /// Uninstalling something other installed mods need is allowed only after an explicit yes (No is the default).
+    /// </summary>
+    private bool ConfirmNothingBreaks(IReadOnlyCollection<InstalledMod> removing, string name)
+    {
+        var broken = Manager.DependentsBrokenBy(removing);
+        if (broken.Count == 0) return true;
+        var lines = string.Join("\n", broken.Take(12).Select(b => "• " + b)) + (broken.Count > 12 ? $"\n…and {broken.Count - 12} more" : "");
+        return Dialogs.ConfirmRisky("Other mods need this",
+            $"{name} is required by mods you still have installed:\n\n{lines}\n\nThey may stop working or crash the game. Uninstall anyway?");
+    }
+
+    /// <summary>
+    /// After installing or updating, lists hard requirements that aren't installed. Ones already in the library can be
+    /// installed straight away; the rest link to their Nexus pages.
+    /// </summary>
+    private async Task WarnMissingRequirementsAsync(IReadOnlyList<(ModPackage Package, IReadOnlyList<ModUnit> Units)> installed)
+    {
+        var missing = installed
+            .SelectMany(i => Manager.MissingRequirements(i.Package, i.Units).Select(r => (i.Package, Requirement: r)))
+            .ToList();
+        if (missing.Count == 0) return;
+
+        var summary = string.Join("\n", missing.GroupBy(m => m.Package.DisplayName)
+            .Select(g => $"• {g.Key} needs {string.Join(", ", g.Select(m => m.Requirement.Name).Distinct())}"));
+        var requirements = missing.Select(m => m.Requirement).DistinctBy(r => r.Name).ToList();
+        var inLibrary = requirements.Select(r => (Requirement: r, Package: Manager.LibraryPackageFor(r)))
+            .Where(x => x.Package != null).ToList();
+        var toDownload = requirements.Where(r => inLibrary.All(x => x.Requirement != r) && r.Url != null).ToList();
+
+        if (inLibrary.Count > 0 &&
+            Dialogs.Confirm("Missing requirements", $"{summary}\n\nInstall {string.Join(", ", inLibrary.Select(x => x.Package!.DisplayName))} from your library now?"))
+        {
+            foreach (var (_, package) in inLibrary) await InstallAsync(package!, package!.Units);
+        }
+        if (toDownload.Count > 0)
+        {
+            if (Dialogs.Confirm("Missing requirements",
+                    $"{summary}\n\nNot in your library: {string.Join(", ", toDownload.Select(r => r.Name))}. Open their pages to download them?"))
+                foreach (var r in toDownload.Take(5)) ShellOps.Open(r.Url!);
+        }
+        else if (inLibrary.Count == 0)
+        {
+            Dialogs.Warn("Missing requirements", summary);
+        }
     }
 
     [RelayCommand]
@@ -246,7 +299,8 @@ public sealed partial class MainViewModel : ObservableObject
         if (item == null) return;
         if (item.AnyInstalled)
         {
-            if (item.Package == null && !Dialogs.Confirm("Uninstall", $"The archive for {item.Name} is gone, so you won't be able to reinstall it from here. Uninstall anyway?"))
+            if ((item.Package == null && !Dialogs.Confirm("Uninstall", $"The archive for {item.Name} is gone, so you won't be able to reinstall it from here. Uninstall anyway?")) ||
+                !ConfirmNothingBreaks(item.View.Installed, item.Name))
             {
                 Rebuild();
                 return;
@@ -271,9 +325,18 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (unit == null) return;
         if (unit.Installed != null)
+        {
+            if (!ConfirmNothingBreaks([unit.Installed], unit.Name))
+            {
+                Rebuild();
+                return;
+            }
             await RunAsync($"Uninstalling {unit.Name}…", progress => Task.Run(() => Manager.Uninstall([unit.Installed], progress)));
+        }
         else
+        {
             await InstallAsync(unit.Owner.Package!, [unit.Unit]);
+        }
     }
 
     private async Task InstallAsync(ModPackage package, IReadOnlyList<ModUnit> units)
@@ -304,10 +367,13 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         await RunAsync($"Installing {package.DisplayName}…", progress => Task.Run(() => Manager.Install(package, units, overwrite, progress)));
+        var installedNow = units.All(u => Manager.State.InstalledFrom(package.FileName).Any(m => PathUtil.Comparer.Equals(m.UnitId, u.Id)));
+        if (!installedNow) return;
         if (units.Any(u => u.HasPaks) && Manager.Game?.PakFolderLoadingEnabled != true)
             Dialogs.Warn("Pak loading is off",
                 "This mod includes .pak files. Dragon's Dogma 2 only loads mods from pak_mods when REFramework's " +
                 "\"Alternate PAK folder\" option is on (IntegrityCheckBypass_LoadPakDirectory=true in re2_fw_config.txt).");
+        await WarnMissingRequirementsAsync([(package, units)]);
     }
 
     private static bool UnitsOverlap(IReadOnlyList<ModUnit> units)
@@ -323,13 +389,21 @@ public sealed partial class MainViewModel : ObservableObject
         if (item.Status == PackageStatus.ProbableUpdate &&
             !Dialogs.Confirm("Possible update", $"Nexus doesn't say which file replaces yours. The best guess is \"{item.View.Update?.Latest?.Name}\" ({item.View.LatestVersion}).\n\nUpdate to it?"))
             return;
-        await RunAsync($"Updating {item.Name}…", progress => Manager.UpdateAsync(item.View, progress));
+        ModPackage? updated = null;
+        await RunAsync($"Updating {item.Name}…", async progress => updated = await Manager.UpdateAsync(item.View, progress));
+        if (updated != null) await WarnMissingRequirementsAsync([(updated, updated.Units)]);
     }
 
     [RelayCommand]
     private void OpenNexus(PackageItemViewModel? item)
     {
         if (item?.NexusUrl is { } url) ShellOps.Open(url);
+    }
+
+    [RelayCommand]
+    private void OpenUrl(string? url)
+    {
+        if (url != null && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http") ShellOps.Open(url);
     }
 
     [RelayCommand]

@@ -22,6 +22,13 @@ public static class Dialogs
         return MessageBox.Show(Owner!, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
     }
 
+    /// <summary>A yes/no warning where No is the default button, for actions that can break something.</summary>
+    public static bool ConfirmRisky(string title, string message)
+    {
+        if (!Interactive) return false;
+        return MessageBox.Show(Owner!, message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+    }
+
     public static void Info(string title, string message)
     {
         if (Interactive) MessageBox.Show(Owner!, message, title, MessageBoxButton.OK, MessageBoxImage.Information);

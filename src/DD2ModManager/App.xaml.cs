@@ -23,8 +23,13 @@ public partial class App : Application
 
         if (screenshot != null)
         {
-            // Render-only mode for checking the UI: private data folder, no prompts, no network, no game changes.
+            // Render-only mode for checking the UI: works on a copy of the real data, never prompts, never uses the
+            // Nexus account, never changes the game folder.
+            var real = AppPaths.DataDir;
             AppPaths.DataDir = Path.Combine(Path.GetTempPath(), "DD2ModManager-screenshot", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(AppPaths.DataDir);
+            foreach (var file in new[] { "settings.json", "state.json", "nexus-cache.json" })
+                if (File.Exists(Path.Combine(real, file))) File.Copy(Path.Combine(real, file), Path.Combine(AppPaths.DataDir, file));
             Dialogs.Interactive = false;
         }
         else

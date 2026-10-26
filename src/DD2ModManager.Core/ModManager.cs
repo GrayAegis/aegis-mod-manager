@@ -39,7 +39,7 @@ public sealed class PackageView
 public sealed record OperationProgress(string Message, double? Fraction = null);
 
 /// <summary>Coordinates the library, the installer, Fluffy import and Nexus updates. One operation at a time.</summary>
-public sealed class ModManager
+public sealed partial class ModManager
 {
     private const long FullRefetchAgeSeconds = 28L * 24 * 3600;
 
@@ -457,6 +457,8 @@ public sealed class ModManager
         ApiDailyRemaining = client.DailyRemaining ?? ApiDailyRemaining;
         SaveState();
         SaveCache();
+        progress?.Report(new OperationProgress("Checking mod requirements…", 1));
+        await TryRefreshRequirementsAsync(ct: ct);
         Log.Info($"Update check done: {fetchedThisRun.Count} mods refreshed; API calls left today: {client.DailyRemaining?.ToString() ?? "?"}");
     }
 
@@ -535,6 +537,7 @@ public sealed class ModManager
         SaveState();
         Log.Info($"Downloaded {info.Name}");
         Refresh();
+        await TryRefreshRequirementsAsync(ct: ct);
         return Library.First(p => PathUtil.Comparer.Equals(p.FileName, info.Name));
     }
 

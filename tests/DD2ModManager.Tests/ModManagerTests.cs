@@ -3,6 +3,11 @@ using DD2ModManager.Core.State;
 
 namespace DD2ModManager.Tests;
 
+/// <summary>Tests that point the global <see cref="AppPaths.DataDir"/> at a temp folder must not run in parallel.</summary>
+[CollectionDefinition("AppPaths")]
+public class AppPathsCollection;
+
+[Collection("AppPaths")]
 public class ModManagerTests : IDisposable
 {
     private readonly TempDir _dir = new();

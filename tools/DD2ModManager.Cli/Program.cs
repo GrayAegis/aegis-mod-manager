@@ -76,6 +76,34 @@ switch (args[0])
         return failures == 0 ? 0 : 2;
     }
 
+    case "deps":
+    {
+        // Dependency report from a copy of the app's data: missing requirements and what each mod is needed by.
+        var real = DD2ModManager.Core.State.AppPaths.DataDir;
+        var copy = Path.Combine(Path.GetTempPath(), "dd2mm-deps", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(copy);
+        foreach (var f in new[] { "settings.json", "state.json", "nexus-cache.json" })
+            if (File.Exists(Path.Combine(real, f))) File.Copy(Path.Combine(real, f), Path.Combine(copy, f));
+        DD2ModManager.Core.State.AppPaths.DataDir = copy;
+        var manager = new ModManager();
+        manager.Load();
+        manager.Refresh();
+        await manager.RefreshRequirementsAsync(force: true);
+        foreach (var view in manager.BuildViews(collapseVersions: true).Where(v => v.InstallState != InstallState.NotInstalled))
+        {
+            var reqs = manager.RequirementsOf(view);
+            var neededBy = manager.RequiredBy(view);
+            Console.WriteLine($"{view.Name}");
+            foreach (var r in reqs)
+                Console.WriteLine($"    {(r.Required ? "needs " : "recommends")} {r.Name,-45} {r.Status}{(r.FromModInfo ? " (modinfo)" : "")}");
+            if (neededBy.Count > 0) Console.WriteLine($"    needed by: {string.Join(", ", neededBy)}");
+            var removing = view.Installed.ToList();
+            foreach (var line in manager.DependentsBrokenBy(removing)) Console.WriteLine($"    uninstall warning: {line}");
+        }
+        Directory.Delete(copy, recursive: true);
+        return 0;
+    }
+
     case "reconcile-preview":
     {
         // Runs the shared-file repair on a copy of the app's data folder and reports what it would add.

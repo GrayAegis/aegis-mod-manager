@@ -15,6 +15,12 @@ public sealed class NexusCache
     [JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
     public Dictionary<int, CachedNexusMod> Mods { get; } = [];
 
+    /// <summary>Requirements per mod, from the v2 API. Kept apart from <see cref="Mods"/> because it refreshes on its own schedule.</summary>
+    [JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
+    public Dictionary<int, List<NexusRequirement>> Requirements { get; } = [];
+
+    public long RequirementsFetchedUnix { get; set; }
+
     public NexusFile? FindFile(int? modId, int? fileId) =>
         modId is { } m && fileId is { } f && Mods.TryGetValue(m, out var mod) ? mod.Files.Files.FirstOrDefault(x => x.FileId == f) : null;
 }
