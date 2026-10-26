@@ -24,7 +24,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _fluffyPath = s.FluffyPath ?? "";
         _checkOnStartup = s.CheckUpdatesOnStartup;
         _autoInstall = s.AutoInstallUpdates;
-        _recycle = s.RecycleReplacedArchives;
+        _keepVersions = s.KeepPreviousVersions;
         _keyStatus = manager.HasApiKey ? "A key is saved. Paste a new one to replace it." : "No key saved yet.";
         RefreshNxm();
     }
@@ -36,7 +36,28 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _fluffyPath;
     [ObservableProperty] private bool _checkOnStartup;
     [ObservableProperty] private bool _autoInstall;
-    [ObservableProperty] private bool _recycle;
+    [ObservableProperty] private int _keepVersions;
+
+    public sealed class KeepChoice(SettingsViewModel owner, int value) : ObservableObject
+    {
+        public int Value => value;
+
+        public bool IsSelected
+        {
+            get => owner.KeepVersions == value;
+            set { if (value) owner.KeepVersions = Value; }
+        }
+
+        public void Refresh() => OnPropertyChanged(nameof(IsSelected));
+    }
+
+    private IReadOnlyList<KeepChoice>? _keepVersionChoices;
+    public IReadOnlyList<KeepChoice> KeepVersionChoices => _keepVersionChoices ??= new[] { 0, 1, 2, 3, 5 }.Select(v => new KeepChoice(this, v)).ToList();
+
+    partial void OnKeepVersionsChanged(int value)
+    {
+        foreach (var choice in KeepVersionChoices) choice.Refresh();
+    }
     [ObservableProperty] private string _keyStatus;
     [ObservableProperty] private string _nxmStatus = "";
     [ObservableProperty] private bool _nxmIsOurs;
@@ -126,7 +147,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         s.FluffyPath = string.IsNullOrWhiteSpace(FluffyPath) ? null : FluffyPath.Trim();
         s.CheckUpdatesOnStartup = CheckOnStartup;
         s.AutoInstallUpdates = AutoInstall;
-        s.RecycleReplacedArchives = Recycle;
+        s.KeepPreviousVersions = KeepVersions;
         if (NewApiKey.Trim().Length > 0) s.NexusApiKey = NewApiKey.Trim();
         _manager.SaveSettings();
         CloseRequested?.Invoke(true);

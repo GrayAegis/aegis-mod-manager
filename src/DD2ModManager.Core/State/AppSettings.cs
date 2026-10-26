@@ -16,8 +16,11 @@ public sealed class AppSettings
     public bool CheckUpdatesOnStartup { get; set; } = true;
     /// <summary>Download and install confident updates without asking.</summary>
     public bool AutoInstallUpdates { get; set; }
-    /// <summary>Send the replaced archive to the Recycle Bin after an update.</summary>
-    public bool RecycleReplacedArchives { get; set; } = true;
+    /// <summary>
+    /// How many replaced versions of each mod to keep for one-click rollback. Older ones go to the Recycle Bin;
+    /// 0 sends every replaced archive there straight away.
+    /// </summary>
+    public int KeepPreviousVersions { get; set; } = 2;
     public bool HideOlderVersions { get; set; } = true;
     /// <summary>The nxm:// handler that was registered before this app took over (e.g. Vortex), for restoring.</summary>
     public string? PreviousNxmHandler { get; set; }
@@ -54,6 +57,9 @@ public static class AppPaths
     public static string NexusCache => Path.Combine(DataDir, "nexus-cache.json");
     public static string Log => Path.Combine(DataDir, "log.txt");
     public static string Backup => Path.Combine(DataDir, "Backup");
+    /// <summary>Archives replaced by updates, kept for rollback. Outside the library so they don't show up as mods.</summary>
+    public static string Previous => Path.Combine(DataDir, "Previous");
+    public static string REFrameworkBackups => Path.Combine(DataDir, "REFramework");
     public static string DefaultLibrary => Path.Combine(DataDir, "Mods");
     public static string Downloads => Path.Combine(Path.GetTempPath(), "DD2ModManager", "downloads");
     public static string Extract => Path.Combine(Path.GetTempPath(), "DD2ModManager", "extract");

@@ -109,16 +109,34 @@
 
                 <!-- Status chips -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-                    <Border Style="{StaticResource Pill}" Background="{StaticResource RaisedBrush}" Margin="0,0,8,0" Padding="10,4"
-                            ToolTip="REFramework (dinput8.dll + reframework folder)">
+                    <Button Command="{Binding ManageREFrameworkCommand}" ToolTip="{Binding FrameworkTip}" Margin="0,0,8,0" Padding="10,4"
+                            BorderBrush="Transparent" IsEnabled="{Binding IsBusy, Converter={x:Static local:Conv.Not}}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource Icon}" FontSize="11" Margin="0,0,6,0" Text="&#xE73E;" Foreground="{StaticResource SuccessBrush}"
-                                       Visibility="{Binding HasFramework, Converter={StaticResource VisibleWhen}}" />
-                            <TextBlock Style="{StaticResource Icon}" FontSize="11" Margin="0,0,6,0" Text="&#xE711;" Foreground="{StaticResource DangerBrush}"
-                                       Visibility="{Binding HasFramework, Converter={StaticResource VisibleWhen}, ConverterParameter=not}" />
-                            <TextBlock Text="REFramework" FontSize="12" />
+                            <TextBlock x:Name="FrameworkIcon" FontSize="11" Margin="0,0,6,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                                        <Setter Property="Text" Value="&#xE73E;" />
+                                        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FrameworkState}" Value="update">
+                                                <Setter Property="Text" Value="&#xE896;" />
+                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding FrameworkState}" Value="missing">
+                                                <Setter Property="Text" Value="&#xE711;" />
+                                                <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding FrameworkState}" Value="unknown">
+                                                <Setter Property="Text" Value="&#xE73E;" />
+                                                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding FrameworkText}" FontSize="12" />
                         </StackPanel>
-                    </Border>
+                    </Button>
                     <Border Style="{StaticResource Pill}" Background="{StaticResource RaisedBrush}" Margin="0,0,8,0" Padding="10,4" ToolTip="{Binding PakLoadingTip}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Icon}" FontSize="11" Margin="0,0,6,0" Text="&#xE73E;" Foreground="{StaticResource SuccessBrush}"
@@ -319,6 +337,13 @@
                                 </Button>
                                 <Button Margin="0,0,8,8" Content="{Binding ToggleButtonText}" IsEnabled="{Binding CanToggle}"
                                         Command="{Binding DataContext.ToggleInstallCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                                <Button Margin="0,0,8,8" Visibility="{Binding CanRollback, Converter={StaticResource VisibleWhen}}"
+                                        Command="{Binding DataContext.RollbackCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding RollbackTarget}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xE7A7;" Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding RollbackButtonText}" />
+                                    </StackPanel>
+                                </Button>
                                 <Button Margin="0,0,8,8" Visibility="{Binding NexusUrl, Converter={StaticResource VisibleWhen}}"
                                         Command="{Binding DataContext.OpenNexusCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}">
                                     <StackPanel Orientation="Horizontal">
@@ -369,6 +394,27 @@
                                                               CommandParameter="{Binding}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding PreviousVersions, Converter={StaticResource VisibleWhen}}">
+                                <TextBlock Text="KEPT FOR ROLLBACK" Style="{StaticResource SectionLabel}" />
+                                <ItemsControl ItemsSource="{Binding PreviousVersions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Record.FileName}">
+                                                    <Run Text="{Binding VersionText, Mode=OneWay}" FontWeight="Medium" /><Run Text="   " /><Run Text="{Binding Detail, Mode=OneWay}" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                                </TextBlock>
+                                                <Button Grid.Column="1" Style="{StaticResource GhostButton}" Content="Roll back" Padding="8,3" FontSize="12"
+                                                        Command="{Binding DataContext.RollbackCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

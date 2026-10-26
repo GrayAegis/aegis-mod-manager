@@ -38,6 +38,29 @@ public sealed class NexusLink
     public bool IgnoreUpdates { get; set; }
 }
 
+/// <summary>An archive an update replaced, kept in <see cref="AppPaths.Previous"/> so the update can be undone.</summary>
+public sealed class PreviousVersion
+{
+    public required string FileName { get; set; }
+    /// <summary>Path under <see cref="AppPaths.Previous"/>.</summary>
+    public required string StoredPath { get; set; }
+    public required string FamilyKey { get; set; }
+    public string? Version { get; set; }
+    public DateTimeOffset UploadedAt { get; set; }
+    public string? ReplacedBy { get; set; }
+    public DateTime ReplacedAtUtc { get; set; } = DateTime.UtcNow;
+    public NexusLink? Link { get; set; }
+}
+
+/// <summary>The REFramework build this app installed, recognised later by the DLL's hash.</summary>
+public sealed class REFrameworkRecord
+{
+    public required string Commit { get; set; }
+    public int? Number { get; set; }
+    public required string DllSha256 { get; set; }
+    public DateTime InstalledAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class AppState
 {
     public List<InstalledMod> Installed { get; set; } = [];
@@ -46,6 +69,8 @@ public sealed class AppState
     public Dictionary<string, NexusLink> Nexus { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool FluffyImported { get; set; }
     public DateTime? LastUpdateCheckUtc { get; set; }
+    public List<PreviousVersion> PreviousVersions { get; set; } = [];
+    public REFrameworkRecord? REFramework { get; set; }
 
     /// <summary>Installed mods that list this game file. Several mods can share one (bundled fonts, script libraries).</summary>
     public IEnumerable<InstalledMod> OwnersOf(string relativePath) =>

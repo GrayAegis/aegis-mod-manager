@@ -459,6 +459,8 @@ public sealed partial class ModManager
         SaveCache();
         progress?.Report(new OperationProgress("Checking mod requirements…", 1));
         await TryRefreshRequirementsAsync(ct: ct);
+        progress?.Report(new OperationProgress("Checking for REFramework updates…", 1));
+        await TryCheckREFrameworkAsync(force: true, ct);
         Log.Info($"Update check done: {fetchedThisRun.Count} mods refreshed; API calls left today: {client.DailyRemaining?.ToString() ?? "?"}");
     }
 
@@ -483,18 +485,9 @@ public sealed partial class ModManager
 
         foreach (var source in sources) SwapInstalled(source, target, progress);
 
-        if (Settings.RecycleReplacedArchives && RecycleFile != null)
-        {
-            foreach (var old in family.Where(p => p != target && UploadedAt(p) <= UploadedAt(target)))
-            {
-                if (!State.InstalledFrom(old.FileName).Any() && File.Exists(old.FullPath) && RecycleFile(old.FullPath))
-                {
-                    State.Nexus.Remove(old.FileName);
-                    Log.Info($"Moved replaced archive {old.FileName} to the Recycle Bin");
-                }
-            }
-            SaveState();
-        }
+        foreach (var old in family.Where(p => p != target && UploadedAt(p) <= UploadedAt(target) && !State.InstalledFrom(p.FileName).Any()))
+            RetireArchive(old, target);
+        SaveState();
         Refresh();
         return target;
     }

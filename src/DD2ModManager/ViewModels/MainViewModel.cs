@@ -38,6 +38,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _quotaText = "";
     [ObservableProperty] private string _gamePathText = "Game folder not set";
     [ObservableProperty] private bool _hasFramework;
+    /// <summary>"ok", "update", "missing" or "unknown"; drives the REFramework badge in the header.</summary>
+    [ObservableProperty] private string _frameworkState = "ok";
+    [ObservableProperty] private string _frameworkText = "REFramework";
+    [ObservableProperty] private string _frameworkTip = "REFramework";
     [ObservableProperty] private bool _pakLoadingOn;
     [ObservableProperty] private string _pakLoadingTip = "";
 
@@ -123,8 +127,13 @@ public sealed partial class MainViewModel : ObservableObject
             OpenSettings();
         }
 
-        // Public data, no API key needed; only refetched once a day or for mods it hasn't seen.
-        await RunAsync("Checking mod requirements…", _ => Manager.TryRefreshRequirementsAsync());
+        // Public data, no API key needed: requirements are refetched once a day, REFramework releases every 6 hours.
+        await RunAsync("Checking mod requirements…", async progress =>
+        {
+            await Manager.TryRefreshRequirementsAsync();
+            progress.Report(new OperationProgress("Checking for REFramework updates…"));
+            await Manager.TryCheckREFrameworkAsync();
+        });
 
         if (!Dialogs.Interactive) return;
         await RefreshAccountAsync();
@@ -188,10 +197,40 @@ public sealed partial class MainViewModel : ObservableObject
         var game = Manager.Game;
         GamePathText = game?.Root ?? "Game folder not set";
         HasFramework = game?.HasREFramework == true;
+        UpdateFrameworkBadge();
         PakLoadingOn = game?.PakFolderLoadingEnabled == true;
         PakLoadingTip = PakLoadingOn
             ? "REFramework loads paks from pak_mods"
             : "Pak mods won't load: turn on REFramework's \"Alternate PAK folder\" (IntegrityCheckBypass_LoadPakDirectory).";
+    }
+
+    private static string Describe(REFrameworkBuild build) =>
+        build.Published is { } p ? $"{build.Label} ({p.LocalDateTime:d MMM yyyy})" : build.Label;
+
+    private void UpdateFrameworkBadge()
+    {
+        var status = Manager.REFramework;
+        if (!HasFramework)
+        {
+            (FrameworkState, FrameworkText) = ("missing", "REFramework missing");
+            FrameworkTip = "REFramework isn't installed, and almost every DD2 mod needs it. Click to install the latest nightly.";
+        }
+        else if (status is { UpdateAvailable: true, Installed: { } installed, Latest: { } latest })
+        {
+            (FrameworkState, FrameworkText) = ("update", "REFramework update");
+            FrameworkTip = $"Installed: {Describe(installed)}\nLatest: {Describe(latest)}" +
+                           (status.BuildsBehind is { } n ? $" ({n} build{(n == 1 ? "" : "s")} newer)" : "") + "\nClick to update.";
+        }
+        else if (status is { Installed: null, Latest: { } newest })
+        {
+            (FrameworkState, FrameworkText) = ("unknown", "REFramework");
+            FrameworkTip = $"REFramework is installed, but its build is only identified after the game has run with it.\nLatest: {Describe(newest)}";
+        }
+        else
+        {
+            (FrameworkState, FrameworkText) = ("ok", "REFramework");
+            FrameworkTip = status?.Installed is { } current ? $"REFramework {Describe(current)} is the latest nightly." : "REFramework is installed.";
+        }
     }
 
     private void Select(string key) =>
@@ -211,7 +250,8 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         await RunAsync("Checking Nexus for updates…", progress => Manager.CheckUpdatesAsync(progress));
-        StatusText = WithUpdatesCount == 0 ? "Everything is up to date." : $"{WithUpdatesCount} update{(WithUpdatesCount == 1 ? "" : "s")} available.";
+        StatusText = WithUpdatesCount == 0 ? "All mods are up to date." : $"{WithUpdatesCount} mod update{(WithUpdatesCount == 1 ? "" : "s")} available.";
+        if (FrameworkState == "update") StatusText += " A newer REFramework build is out: click the REFramework badge to update.";
         if (Manager.Settings.AutoInstallUpdates && UpdateCount > 0) await UpdateAllAsync(automatic: true);
     }
 
@@ -398,6 +438,53 @@ public sealed partial class MainViewModel : ObservableObject
     private void OpenNexus(PackageItemViewModel? item)
     {
         if (item?.NexusUrl is { } url) ShellOps.Open(url);
+    }
+
+    [RelayCommand]
+    private async Task Rollback(PreviousVersionItemViewModel? item)
+    {
+        if (item?.Owner.Package == null) return;
+        if (!Dialogs.Confirm("Roll back", $"Roll back {item.Owner.Name} to {item.VersionText}?\n\n" +
+                                          "The newer version stays in your library, and updates for this mod are paused until you untick \"Ignore updates\"."))
+            return;
+        await RunAsync($"Rolling back {item.Owner.Name}…", progress => Task.Run(() => Manager.Rollback(item.Owner.View, item.Record, progress)));
+    }
+
+    [RelayCommand]
+    private async Task ManageREFramework()
+    {
+        if (Manager.REFramework == null)
+            await RunAsync("Checking for REFramework updates…", _ => Manager.TryCheckREFrameworkAsync(force: true));
+        if (Manager.REFramework is not { } status)
+        {
+            Dialogs.Warn("REFramework", "Couldn't reach GitHub to look up REFramework builds. Check your connection and try again.");
+            return;
+        }
+
+        if (status is { UpdateAvailable: true, Latest: { } latest })
+        {
+            var current = !status.IsInstalled ? "REFramework isn't installed."
+                : status.Installed is { } installed ? $"Installed: {Describe(installed)}" +
+                                                      (status.BuildsBehind is { } n ? $", {n} build{(n == 1 ? "" : "s")} behind." : ".")
+                : "The installed build can't be identified until the game has run with it.";
+            if (!Dialogs.Confirm("REFramework", $"{current}\nLatest: {Describe(latest)}.\n\nInstall the latest nightly? Only dinput8.dll is replaced, " +
+                                                "as REFramework's instructions say for non-VR use. The current one is backed up so you can restore it."))
+                return;
+            await RunAsync("Updating REFramework…", progress => Manager.UpdateREFrameworkAsync(progress));
+            if (Manager.REFramework is { UpdateAvailable: false, Installed: { } now }) StatusText = $"REFramework updated to {now.Label}.";
+            return;
+        }
+
+        var message = $"REFramework {(status.Installed is { } i ? Describe(i) : "")} is the latest nightly.";
+        if (Manager.CanRestoreREFramework)
+        {
+            if (Dialogs.ConfirmRisky("REFramework", $"{message}\n\nRestore the build that was installed before it?"))
+                await RunAsync("Restoring REFramework…", _ => Task.Run(Manager.RestoreREFramework));
+        }
+        else
+        {
+            Dialogs.Info("REFramework", message);
+        }
     }
 
     [RelayCommand]

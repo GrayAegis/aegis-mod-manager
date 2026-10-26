@@ -104,6 +104,42 @@ switch (args[0])
         return 0;
     }
 
+    case "reframework":
+    {
+        // REFramework status for the real game folder (read-only). With --inspect-zip, downloads the latest
+        // REFramework.zip to a temp folder and lists it, without installing anything.
+        var manager = new ModManager();
+        manager.Load();
+        await manager.CheckREFrameworkAsync(force: true);
+        var s = manager.REFramework;
+        if (s == null) { Console.WriteLine("No game folder set."); return 1; }
+        Console.WriteLine($"installed: {(s.IsInstalled ? s.Installed?.Label + " " + s.Installed?.Commit + " " + s.Installed?.Published : "not installed")}");
+        Console.WriteLine($"latest:    {s.Latest?.Label} {s.Latest?.Commit} {s.Latest?.Published} {s.Latest?.Size} bytes");
+        Console.WriteLine($"behind:    {s.BuildsBehind}   update available: {s.UpdateAvailable}");
+        if (args.Contains("--inspect-zip") && s.Latest?.DownloadUrl is { } url)
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "dd2mm-reframework-inspect", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(temp);
+            try
+            {
+                var zip = Path.Combine(temp, "REFramework.zip");
+                using (var http = new HttpClient())
+                {
+                    http.DefaultRequestHeaders.UserAgent.ParseAdd("DD2ModManager-dev");
+                    await File.WriteAllBytesAsync(zip, await http.GetByteArrayAsync(url));
+                }
+                using var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(zip, new SharpCompress.Readers.ReaderOptions());
+                foreach (var e in archive.Entries.Where(e => !e.IsDirectory))
+                    Console.WriteLine($"  zip entry: {e.Key} ({e.Size:N0} bytes)");
+            }
+            finally
+            {
+                Directory.Delete(temp, recursive: true);
+            }
+        }
+        return 0;
+    }
+
     case "reconcile-preview":
     {
         // Runs the shared-file repair on a copy of the app's data folder and reports what it would add.

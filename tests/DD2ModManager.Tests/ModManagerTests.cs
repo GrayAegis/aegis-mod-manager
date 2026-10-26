@@ -68,7 +68,12 @@ public class ModManagerTests : IDisposable
         Assert.Equal("new", File.ReadAllText(Path.Combine(_game, "reframework", "autorun", "Bestiary.lua")));
         Assert.Equal("new pak", File.ReadAllText(Path.Combine(_game, "pak_mods", "x0000-Bestiary.pak")));
         Assert.False(File.Exists(Path.Combine(_game, "reframework", "autorun", "Bestiary", "Removed.lua")));
-        Assert.Equal(["Bestiary 1196 2.8.8 2026-10-20T14-18Z vcRqGcwCv.zip"], _recycled);
+        // The replaced archive is kept for rollback, outside the library.
+        Assert.Empty(_recycled);
+        var kept = manager.State.PreviousVersions.Single();
+        Assert.Equal("Bestiary 1196 2.8.8 2026-10-20T14-18Z vcRqGcwCv.zip", kept.FileName);
+        Assert.True(File.Exists(Path.Combine(AppPaths.Previous, kept.StoredPath)));
+        Assert.False(File.Exists(Path.Combine(_library, kept.FileName)));
 
         var after = manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Bestiary");
         Assert.Equal("2.8.11", after.Version);
@@ -104,7 +109,7 @@ public class ModManagerTests : IDisposable
 
         Assert.Equal("1.5.8", File.ReadAllText(Path.Combine(_game, "reframework", "autorun", "content_editor.lua")));
         Assert.All(manager.State.Installed, m => Assert.Contains("1.5.8", m.PackageFileName));
-        Assert.Contains(_recycled, f => f.Contains("1.5.6"));
+        Assert.Contains(manager.State.PreviousVersions, p => p.FileName.Contains("1.5.6"));
         Assert.Equal(PackageStatus.Unchecked, manager.BuildViews(collapseVersions: true).Single().Status);
     }
 
@@ -144,6 +149,69 @@ public class ModManagerTests : IDisposable
         var notices = manager.State.Installed.Single(m => m.DisplayName == "Take Notice");
         manager.Uninstall([notices]);
         Assert.Equal("font v2", File.ReadAllText(Path.Combine(_game, "reframework", "fonts", "Alegreya.ttf")));
+    }
+
+    private static string Version(int minor) => $"Bestiary 1196 2.8.{minor} 2026-10-{10 + minor:D2}T12-00Z abcdefgh{minor}.zip";
+
+    private async Task<ModManager> InstallAndUpdate(params int[] minors)
+    {
+        Fixtures.Zip(Path.Combine(_library, Version(minors[0])), ("Bestiary.pak", $"pak {minors[0]}"), ("reframework/autorun/Bestiary.lua", $"v{minors[0]}"));
+        var manager = NewManager();
+        Fixtures.Zip(Path.Combine(_library, "Other 50 1.0 2026-10-01T00-00Z aaaaaaaaa.zip"), ("Other.pak", "other"));
+        manager.Refresh();
+        foreach (var p in manager.Library) manager.Install(p, p.Units, overwriteConflicts: false);
+        foreach (var minor in minors.Skip(1))
+        {
+            Fixtures.Zip(Path.Combine(_library, Version(minor)), ("Bestiary.pak", $"pak {minor}"), ("reframework/autorun/Bestiary.lua", $"v{minor}"));
+            manager.Refresh();
+            await manager.UpdateAsync(manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Bestiary"));
+        }
+        return manager;
+    }
+
+    private string GameText(string rel) => File.ReadAllText(Path.Combine(_game, rel.Replace('/', '\\')));
+
+    [Fact]
+    public async Task RollbackRestoresTheKeptVersionAndPausesItsUpdates()
+    {
+        var manager = await InstallAndUpdate(8, 11);
+        Assert.Equal("v11", GameText("reframework/autorun/Bestiary.lua"));
+
+        var view = manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Bestiary");
+        var kept = manager.PreviousVersionsOf(view).Single();
+        manager.Rollback(view, kept);
+
+        Assert.Equal("v8", GameText("reframework/autorun/Bestiary.lua"));
+        Assert.Equal("pak 8", GameText("pak_mods/x0000-Bestiary.pak"));
+        Assert.Empty(manager.State.PreviousVersions);
+        Assert.True(File.Exists(Path.Combine(_library, Version(11))));
+
+        // Updates are paused so the next check doesn't put 2.8.11 straight back; unpausing offers it again.
+        var after = manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Bestiary");
+        Assert.Equal("2.8.8", after.Version);
+        Assert.Equal(PackageStatus.Ignored, after.Status);
+        manager.SetIgnoreUpdates(after.Package!, false);
+        Assert.Equal(PackageStatus.UpdateDownloaded, manager.BuildViews(collapseVersions: true).Single(v => v.Name == "Bestiary").Status);
+    }
+
+    [Fact]
+    public async Task KeepsOnlyTheConfiguredNumberOfVersions()
+    {
+        var manager = await InstallAndUpdate(1, 2, 3, 4);
+        Assert.Equal([Version(3), Version(2)], manager.PreviousVersionsOf(manager.BuildViews(true).Single(v => v.Name == "Bestiary")).Select(p => p.FileName));
+        Assert.Equal([Version(1)], _recycled);
+        Assert.Equal("v4", GameText("reframework/autorun/Bestiary.lua"));
+    }
+
+    [Fact]
+    public async Task KeepingNoVersionsRecyclesStraightAway()
+    {
+        var settings = JsonStore.Load<AppSettings>(AppPaths.Settings);
+        settings.KeepPreviousVersions = 0;
+        JsonStore.Save(AppPaths.Settings, settings);
+        var manager = await InstallAndUpdate(1, 2);
+        Assert.Empty(manager.State.PreviousVersions);
+        Assert.Equal([Version(1)], _recycled);
     }
 
     [Fact]

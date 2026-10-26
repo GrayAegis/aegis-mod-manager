@@ -65,6 +65,14 @@ public sealed class RequirementItemViewModel(RequirementInfo info)
     }
 }
 
+public sealed class PreviousVersionItemViewModel(PackageItemViewModel owner, PreviousVersion record)
+{
+    public PackageItemViewModel Owner { get; } = owner;
+    public PreviousVersion Record { get; } = record;
+    public string VersionText => Record.Version is { Length: > 0 } v ? "v" + v.TrimStart('v', 'V') : Record.FileName;
+    public string Detail => $"replaced {Record.ReplacedAtUtc.ToLocalTime():d MMM yyyy}";
+}
+
 public sealed partial class PackageItemViewModel : ObservableObject
 {
     private readonly ModManager _manager;
@@ -90,7 +98,13 @@ public sealed partial class PackageItemViewModel : ObservableObject
             .Select(r => new RequirementItemViewModel(r))
             .ToList();
         RequiredBy = manager.RequiredBy(view);
+        PreviousVersions = manager.PreviousVersionsOf(view).Select(p => new PreviousVersionItemViewModel(this, p)).ToList();
     }
+
+    public IReadOnlyList<PreviousVersionItemViewModel> PreviousVersions { get; }
+    public PreviousVersionItemViewModel? RollbackTarget => PreviousVersions.FirstOrDefault();
+    public bool CanRollback => RollbackTarget != null && Package != null;
+    public string RollbackButtonText => RollbackTarget is { } t ? $"Roll back to {t.VersionText}" : "";
 
     public ChangelogView? Changelog { get; }
     public IReadOnlyList<ChangelogItemViewModel> ChangelogEntries { get; }
